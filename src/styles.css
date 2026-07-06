@@ -1,0 +1,50 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color: #f1f1f1;
+  background: #0f0f0f;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #0f0f0f;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.focus-ring {
+  @apply focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-marker;
+}
+
+.field-label {
+  @apply text-[11px] font-semibold uppercase tracking-[0.1em] text-graphite;
+}
+
+.field-input {
+  @apply focus-ring w-full rounded-md border border-line bg-[#0f0f0f] px-3 py-2.5 text-sm text-ink transition placeholder:text-[#6f6f6f] focus:border-marker;
+}
+
+.tool-button {
+  @apply focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-md border border-line bg-[#1f1f1f] px-3 text-sm font-semibold text-ink transition hover:bg-[#272727] disabled:cursor-not-allowed disabled:opacity-45;
+}
+
+.primary-button {
+  @apply focus-ring inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-ink px-4 text-sm font-semibold text-paper transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-45;
+}
