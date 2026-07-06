@@ -1,9 +1,5 @@
 import type { FeedVideo } from '../src/types'
 
-type BufferLike = {
-  from(input: ArrayBuffer): { toString(encoding: 'base64'): string }
-}
-
 type YouTubeVideoItem = {
   id: string
   snippet: {
@@ -103,24 +99,17 @@ export async function resolvePopularFeedVideos(regionCode = 'US'): Promise<FeedV
   const channelIds = [...new Set(items.map((item) => item.snippet.channelId))].join(',')
   const channelAvatars = channelIds ? await resolveChannelAvatars(apiKey, channelIds) : new Map<string, string>()
 
-  return Promise.all(
-    items.map(async (item, index) => {
-      const thumbnailUrl = bestThumbnail(item.snippet.thumbnails)
-      const avatarUrl = channelAvatars.get(item.snippet.channelId) ?? null
-
-      return {
-        id: item.id,
-        title: item.snippet.title,
-        channelName: item.snippet.channelTitle,
-        views: formatViews(Number(item.statistics?.viewCount ?? 0)),
-        publishTime: formatRelativeTime(item.snippet.publishedAt),
-        duration: formatDuration(item.contentDetails?.duration),
-        thumbnail: thumbnailUrl ? await imageUrlToDataUrl(thumbnailUrl) : null,
-        avatar: avatarUrl ? await imageUrlToDataUrl(avatarUrl) : null,
-        accent: fallbackAccents[index % fallbackAccents.length],
-      }
-    }),
-  )
+  return items.map((item, index) => ({
+    id: item.id,
+    title: item.snippet.title,
+    channelName: item.snippet.channelTitle,
+    views: formatViews(Number(item.statistics?.viewCount ?? 0)),
+    publishTime: formatRelativeTime(item.snippet.publishedAt),
+    duration: formatDuration(item.contentDetails?.duration),
+    thumbnail: bestThumbnail(item.snippet.thumbnails),
+    avatar: channelAvatars.get(item.snippet.channelId) ?? null,
+    accent: fallbackAccents[index % fallbackAccents.length],
+  }))
 }
 
 function normalizeRegionCode(regionCode: string) {
@@ -150,25 +139,12 @@ async function resolveChannelAvatars(apiKey: string, ids: string) {
   )
 }
 
-async function imageUrlToDataUrl(url: string) {
-  const response = await fetch(url)
-  if (!response.ok) {
-    return null
-  }
-
-  const contentType = response.headers.get('content-type') ?? 'image/jpeg'
-  const imageBuffer = await response.arrayBuffer()
-  const buffer = (globalThis as typeof globalThis & { Buffer?: BufferLike }).Buffer
-
-  return buffer ? `data:${contentType};base64,${buffer.from(imageBuffer).toString('base64')}` : null
-}
-
 function bestThumbnail(thumbnails: Record<string, { url: string }>) {
   return (
-    thumbnails.maxres?.url ??
-    thumbnails.standard?.url ??
     thumbnails.high?.url ??
     thumbnails.medium?.url ??
+    thumbnails.standard?.url ??
+    thumbnails.maxres?.url ??
     thumbnails.default?.url ??
     null
   )
