@@ -67,22 +67,23 @@ async function resolveAvatar() {
       </div>
       <div class="min-w-0 flex-1">
         <p class="field-label">Channel avatar</p>
-        <p class="truncate text-xs text-graphite">{{ avatar ? 'Avatar loaded.' : 'Upload or use a channel URL.' }}</p>
+        <p class="text-xs text-graphite">{{ avatar ? 'Loaded' : 'Upload or paste a channel URL' }}</p>
       </div>
-      <div class="flex shrink-0 gap-1">
-        <label class="tool-button min-h-8 cursor-pointer px-2 text-xs">
-          Upload
-          <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
-        </label>
-        <button
-          type="button"
-          class="tool-button min-h-8 px-2 text-xs"
-          :disabled="!avatar"
-          @click="emit('update:avatar', null)"
-        >
-          Remove
-        </button>
-      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-2">
+      <label class="tool-button min-h-8 cursor-pointer px-2 text-xs">
+        Upload
+        <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
+      </label>
+      <button
+        type="button"
+        class="tool-button min-h-8 px-2 text-xs"
+        :disabled="!avatar"
+        @click="emit('update:avatar', null)"
+      >
+        Remove
+      </button>
     </div>
 
     <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
