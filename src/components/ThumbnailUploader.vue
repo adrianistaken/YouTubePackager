@@ -4,6 +4,7 @@ import type { VariantKey, VideoPackage } from '../types'
 
 const model = defineModel<VideoPackage>({ required: true })
 const warning = ref('')
+const isDragging = ref(false)
 
 const acceptedTypes = ['image/png', 'image/jpeg', 'image/webp']
 
@@ -30,9 +31,13 @@ async function handleUpload(event: Event) {
   const file = input.files?.[0]
   if (!file) return
 
+  await handleFile(file)
+  input.value = ''
+}
+
+async function handleFile(file: File) {
   if (!acceptedTypes.includes(file.type)) {
     warning.value = 'Use PNG, JPG, JPEG, or WEBP.'
-    input.value = ''
     return
   }
 
@@ -52,6 +57,14 @@ async function handleUpload(event: Event) {
       [model.value.activeVariant]: src,
     },
   }
+}
+
+async function handleDrop(event: DragEvent) {
+  isDragging.value = false
+  const file = event.dataTransfer?.files?.[0]
+  if (!file) return
+
+  await handleFile(file)
 }
 
 function setVariant(variant: VariantKey) {
@@ -87,10 +100,17 @@ function removeActiveThumbnail() {
       </div>
     </div>
 
-    <label class="focus-ring flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#3a3a3a] bg-[#0f0f0f] px-4 py-5 text-center transition hover:border-[#5a5a5a]">
+    <label
+      class="focus-ring flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed bg-[#0f0f0f] px-4 py-5 text-center transition"
+      :class="isDragging ? 'border-ink bg-[#181818]' : 'border-[#3a3a3a] hover:border-[#5a5a5a]'"
+      @dragenter.prevent="isDragging = true"
+      @dragover.prevent="isDragging = true"
+      @dragleave.prevent="isDragging = false"
+      @drop.prevent="handleDrop"
+    >
       <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
       <span class="text-sm font-semibold">Upload variant {{ model.activeVariant }}</span>
-      <span class="mt-1 text-xs text-graphite">PNG, JPG, JPEG, WEBP</span>
+      <span class="mt-1 text-xs text-graphite">Drop image here or click to browse</span>
     </label>
 
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
