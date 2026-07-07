@@ -12,6 +12,7 @@ import logoUrl from '../youtubepackager-logo.png'
 
 const previewMode = ref<LayoutMode>('desktop')
 const previewRef = ref<HTMLElement | null>(null)
+const placementStep = ref(0)
 const { videos: feedVideos, status: feedStatus } = useFeedVideos()
 
 const videoPackage = ref<VideoPackage>({
@@ -32,6 +33,10 @@ const activeThumbnail = computed(
 const previewLabel = computed(() =>
   previewMode.value === 'desktop' ? 'Desktop feed' : 'Mobile feed',
 )
+
+function swapPreviewSpots() {
+  placementStep.value += 1
+}
 </script>
 
 <template>
@@ -61,6 +66,9 @@ const previewLabel = computed(() =>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <PreviewToggle v-model="previewMode" />
+              <button type="button" class="tool-button min-h-9 px-3 text-xs sm:text-sm" @click="swapPreviewSpots">
+                Swap spots
+              </button>
               <ExportButton :target="previewRef" :mode="previewMode" />
             </div>
           </div>
@@ -81,6 +89,7 @@ const previewLabel = computed(() =>
                 :thumbnail="activeThumbnail"
                 :feed-videos="feedVideos"
                 :feed-status="feedStatus"
+                :placement-step="placementStep"
               />
               <MobilePreview
                 v-else
@@ -88,6 +97,7 @@ const previewLabel = computed(() =>
                 :thumbnail="activeThumbnail"
                 :feed-videos="feedVideos"
                 :feed-status="feedStatus"
+                :placement-step="placementStep"
               />
             </div>
           </div>

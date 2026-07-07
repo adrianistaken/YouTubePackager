@@ -9,6 +9,7 @@ const props = defineProps<{
   thumbnail: string | null
   feedVideos: FeedVideo[]
   feedStatus: 'fallback' | 'loading' | 'live' | 'error'
+  placementStep: number
 }>()
 
 const userVideo = computed<FeedVideo>(() => ({
@@ -23,10 +24,20 @@ const userVideo = computed<FeedVideo>(() => ({
   accent: '#e83f35',
 }))
 
-const feed = computed(() => [
-  userVideo.value,
-  ...props.feedVideos.slice(0, 5),
-].filter(Boolean))
+const feed = computed(() => {
+  const contextVideos = rotateVideos(props.feedVideos.slice(0, 5), props.placementStep)
+  const insertAt = contextVideos.length ? props.placementStep % (contextVideos.length + 1) : 0
+  const videos = [...contextVideos]
+  videos.splice(insertAt, 0, userVideo.value)
+  return videos
+})
+
+function rotateVideos(videos: FeedVideo[], step: number) {
+  if (!videos.length) return videos
+
+  const offset = step % videos.length
+  return [...videos.slice(offset), ...videos.slice(0, offset)]
+}
 </script>
 
 <template>
