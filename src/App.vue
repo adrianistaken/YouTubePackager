@@ -44,7 +44,6 @@ const previewLabel = computed(() =>
               <img :src="logoUrl" alt="" class="size-8 shrink-0 rounded-md object-cover" />
               <div class="min-w-0">
                 <p class="truncate text-sm font-semibold">YouTube Packager</p>
-                <p class="text-xs text-graphite">Edit the test package.</p>
               </div>
             </div>
           </div>
@@ -59,9 +58,6 @@ const previewLabel = computed(() =>
           <div class="flex flex-col gap-3 border-b border-line bg-panel px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-sm font-semibold">{{ previewLabel }}</p>
-              <p class="text-xs text-graphite">
-                {{ feedStatus === 'live' ? 'Using popular YouTube videos.' : 'Using local context placeholders.' }}
-              </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <PreviewToggle v-model="previewMode" />

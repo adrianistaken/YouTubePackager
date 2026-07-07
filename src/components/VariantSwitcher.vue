@@ -9,8 +9,7 @@ function setVariant(variant: VariantKey) {
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center justify-between gap-3" v-bind="$attrs">
-    <p class="text-sm font-medium text-graphite">Compare thumbnail variants with the same metadata.</p>
+  <div class="flex flex-wrap items-center justify-end gap-3" v-bind="$attrs">
     <div class="flex flex-wrap gap-2">
       <button
         v-for="variant in ['A', 'B', 'C'] as VariantKey[]"
