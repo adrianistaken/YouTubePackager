@@ -28,6 +28,7 @@ async function handleUpload(event: Event) {
   if (!file) return
 
   emit('update:avatar', await readFileAsDataUrl(file))
+  input.value = ''
 }
 
 async function resolveAvatar() {
@@ -66,21 +67,25 @@ async function resolveAvatar() {
       </div>
       <div class="min-w-0 flex-1">
         <p class="field-label">Channel avatar</p>
-        <p class="text-xs text-graphite">{{ avatar ? 'Avatar loaded.' : 'Optional. Upload or pull from a channel.' }}</p>
+        <p class="truncate text-xs text-graphite">{{ avatar ? 'Avatar loaded.' : 'Upload or use a channel URL.' }}</p>
+      </div>
+      <div class="flex shrink-0 gap-1">
+        <label class="tool-button min-h-8 cursor-pointer px-2 text-xs">
+          Upload
+          <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
+        </label>
+        <button
+          type="button"
+          class="tool-button min-h-8 px-2 text-xs"
+          :disabled="!avatar"
+          @click="emit('update:avatar', null)"
+        >
+          Remove
+        </button>
       </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-2">
-      <label class="tool-button min-h-9 cursor-pointer px-3 text-xs">
-        Upload
-        <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
-      </label>
-      <button type="button" class="tool-button min-h-9 px-3 text-xs" :disabled="!avatar" @click="emit('update:avatar', null)">
-        Remove
-      </button>
-    </div>
-
-    <div class="grid gap-2">
+    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
       <input
         v-model="channelUrl"
         class="field-input min-h-9 py-2 text-xs"
@@ -94,7 +99,7 @@ async function resolveAvatar() {
         :disabled="!channelUrl.trim() || isResolving"
         @click="resolveAvatar"
       >
-        {{ isResolving ? 'Finding avatar' : 'Use channel avatar' }}
+        {{ isResolving ? 'Finding' : 'Use' }}
       </button>
     </div>
 

@@ -100,27 +100,25 @@ function removeActiveThumbnail() {
       </div>
     </div>
 
-    <label
-      class="focus-ring flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed bg-[#0f0f0f] px-4 py-5 text-center transition"
-      :class="isDragging ? 'border-ink bg-[#181818]' : 'border-[#3a3a3a] hover:border-[#5a5a5a]'"
-      @dragenter.prevent="isDragging = true"
-      @dragover.prevent="isDragging = true"
-      @dragleave.prevent="isDragging = false"
-      @drop.prevent="handleDrop"
-    >
-      <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
-      <span class="text-sm font-semibold">Upload variant {{ model.activeVariant }}</span>
-      <span class="mt-1 text-xs text-graphite">Drop image here or click to browse</span>
-    </label>
-
-    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <p class="text-xs text-graphite">
-        {{ model.thumbnails[model.activeVariant] ? 'Thumbnail loaded.' : 'No thumbnail for this variant yet.' }}
-      </p>
+    <div class="relative">
+      <label
+        class="focus-ring flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed bg-[#0f0f0f] px-4 py-5 text-center transition"
+        :class="isDragging ? 'border-ink bg-[#181818]' : 'border-[#3a3a3a] hover:border-[#5a5a5a]'"
+        @dragenter.prevent="isDragging = true"
+        @dragover.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="handleDrop"
+      >
+        <input class="sr-only" type="file" accept="image/png,image/jpeg,image/webp" @change="handleUpload" />
+        <span class="text-sm font-semibold">
+          {{ model.thumbnails[model.activeVariant] ? `Replace variant ${model.activeVariant}` : `Upload variant ${model.activeVariant}` }}
+        </span>
+        <span class="mt-1 text-xs text-graphite">Drop image here or click to browse</span>
+      </label>
       <button
+        v-if="model.thumbnails[model.activeVariant]"
         type="button"
-        class="tool-button min-h-9 px-2 text-xs"
-        :disabled="!model.thumbnails[model.activeVariant]"
+        class="focus-ring absolute right-2 top-2 rounded-md border border-line bg-[#1f1f1f] px-2 py-1 text-xs font-semibold text-ink transition hover:bg-[#272727]"
         @click="removeActiveThumbnail"
       >
         Remove
