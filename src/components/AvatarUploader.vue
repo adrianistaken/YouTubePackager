@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 defineProps<{
   avatar: string | null
@@ -9,9 +9,19 @@ const emit = defineEmits<{
   'update:avatar': [value: string | null]
 }>()
 
-const channelUrl = ref('')
+const CHANNEL_URL_STORAGE_KEY = 'youtube-packager:channel-url'
+
+const channelUrl = ref(readStoredChannelUrl())
 const error = ref('')
 const isResolving = ref(false)
+
+watch(channelUrl, (value) => {
+  try {
+    window.localStorage.setItem(CHANNEL_URL_STORAGE_KEY, value)
+  } catch {
+    // Ignore storage failures so avatar lookup still works.
+  }
+})
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -54,6 +64,14 @@ async function resolveAvatar() {
         : 'Could not find an avatar for that channel.'
   } finally {
     isResolving.value = false
+  }
+}
+
+function readStoredChannelUrl() {
+  try {
+    return window.localStorage.getItem(CHANNEL_URL_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
   }
 }
 </script>

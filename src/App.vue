@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import DesktopPreview from './components/DesktopPreview.vue'
 import ExportButton from './components/ExportButton.vue'
 import MobilePreview from './components/MobilePreview.vue'
@@ -10,12 +10,14 @@ import { useFeedVideos } from './composables/useFeedVideos'
 import type { LayoutMode, VideoPackage } from './types'
 import logoUrl from '../youtubepackager-logo.png'
 
+const PACKAGE_STORAGE_KEY = 'youtube-packager:package'
+
 const previewMode = ref<LayoutMode>('desktop')
 const previewRef = ref<HTMLElement | null>(null)
 const placementStep = ref(0)
 const { videos: feedVideos, status: feedStatus } = useFeedVideos()
 
-const videoPackage = ref<VideoPackage>({
+const defaultPackage: VideoPackage = {
   title: 'I rebuilt my entire editing workflow in one weekend',
   channelName: 'Adrian Makes',
   views: '18K views',
@@ -24,7 +26,9 @@ const videoPackage = ref<VideoPackage>({
   avatar: null,
   activeVariant: 'A',
   thumbnails: {},
-})
+}
+
+const videoPackage = ref<VideoPackage>(readStoredPackage())
 
 const activeThumbnail = computed(
   () => videoPackage.value.thumbnails[videoPackage.value.activeVariant] ?? null,
@@ -36,6 +40,62 @@ const previewLabel = computed(() =>
 
 function swapPreviewSpots() {
   placementStep.value += 1
+}
+
+watch(
+  videoPackage,
+  (value) => {
+    persistPackage(value)
+  },
+  { deep: true },
+)
+
+function readStoredPackage(): VideoPackage {
+  try {
+    const stored = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
+    if (!stored) return { ...defaultPackage }
+
+    const parsed = JSON.parse(stored) as Partial<VideoPackage>
+    return {
+      ...defaultPackage,
+      ...parsed,
+      activeVariant: isVariantKey(parsed.activeVariant) ? parsed.activeVariant : defaultPackage.activeVariant,
+      avatar: typeof parsed.avatar === 'string' ? parsed.avatar : null,
+      thumbnails: isThumbnailRecord(parsed.thumbnails) ? parsed.thumbnails : {},
+    }
+  } catch {
+    return { ...defaultPackage }
+  }
+}
+
+function persistPackage(value: VideoPackage) {
+  try {
+    window.localStorage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(value))
+  } catch {
+    const lightweightPackage: VideoPackage = {
+      ...value,
+      avatar: null,
+      thumbnails: {},
+    }
+
+    try {
+      window.localStorage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(lightweightPackage))
+    } catch {
+      // Ignore storage failures so the editor remains usable.
+    }
+  }
+}
+
+function isVariantKey(value: unknown): value is VideoPackage['activeVariant'] {
+  return value === 'A' || value === 'B' || value === 'C'
+}
+
+function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] {
+  if (!value || typeof value !== 'object') return false
+
+  return Object.entries(value).every(
+    ([key, thumbnail]) => isVariantKey(key) && typeof thumbnail === 'string',
+  )
 }
 </script>
 
