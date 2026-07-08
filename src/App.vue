@@ -19,7 +19,7 @@ const { videos: feedVideos, status: feedStatus } = useFeedVideos()
 
 const defaultPackage: VideoPackage = {
   title: 'I rebuilt my entire editing workflow in one weekend',
-  channelName: 'Adrian Makes',
+  channelName: 'Channel Name',
   views: '18K views',
   publishTime: '3 days ago',
   duration: '12:18',
