@@ -5,7 +5,6 @@ import ExportButton from './components/ExportButton.vue'
 import MobilePreview from './components/MobilePreview.vue'
 import PackageForm from './components/PackageForm.vue'
 import PreviewToggle from './components/PreviewToggle.vue'
-import VariantSwitcher from './components/VariantSwitcher.vue'
 import { useFeedVideos } from './composables/useFeedVideos'
 import type { LayoutMode, VideoPackage } from './types'
 import logoUrl from '../youtubepackager-logo.png'
@@ -131,10 +130,6 @@ function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] 
               </button>
               <ExportButton :target="previewRef" :mode="previewMode" />
             </div>
-          </div>
-
-          <div class="border-b border-line bg-panel px-4 py-3">
-            <VariantSwitcher v-model="videoPackage" />
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-paper p-4">

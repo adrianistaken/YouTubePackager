@@ -90,12 +90,17 @@ function removeActiveThumbnail() {
           v-for="variant in ['A', 'B', 'C'] as VariantKey[]"
           :key="variant"
           type="button"
-          class="focus-ring grid size-9 place-items-center rounded-md border text-sm font-bold transition"
+          class="focus-ring inline-flex size-9 items-center justify-center gap-1.5 rounded-md border text-sm font-bold transition"
           :class="model.activeVariant === variant ? 'border-ink bg-ink text-paper' : 'border-line bg-[#0f0f0f] text-ink hover:bg-[#1f1f1f]'"
           :aria-label="`Use thumbnail variant ${variant}`"
           @click="setVariant(variant)"
         >
           {{ variant }}
+          <span
+            class="size-1.5 rounded-full"
+            :class="model.thumbnails[variant] ? 'bg-signal' : 'bg-[#4a4a50]'"
+            aria-hidden="true"
+          />
         </button>
       </div>
     </div>
