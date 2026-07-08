@@ -1,8 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import SidebarIcon from './SidebarIcon.vue'
 import YouTubeFeedCard from './YouTubeFeedCard.vue'
 import YouTubeLogo from './YouTubeLogo.vue'
 import type { FeedVideo, VideoPackage } from '../types'
+
+type SidebarIconName =
+  | 'home'
+  | 'shorts'
+  | 'channel'
+  | 'history'
+  | 'playlists'
+  | 'clock'
+  | 'like'
+  | 'video'
+  | 'download'
+
+type SidebarItem = {
+  label: string
+  icon: SidebarIconName
+  active?: boolean
+}
 
 const props = defineProps<{
   packageData: VideoPackage
@@ -23,6 +41,21 @@ const userVideo = computed<FeedVideo>(() => ({
   avatar: props.packageData.avatar,
   accent: '#e83f35',
 }))
+
+const primarySidebarItems: SidebarItem[] = [
+  { label: 'Home', icon: 'home', active: true },
+  { label: 'Shorts', icon: 'shorts', active: false },
+]
+
+const youSidebarItems: SidebarItem[] = [
+  { label: 'Your channel', icon: 'channel' },
+  { label: 'History', icon: 'history' },
+  { label: 'Playlists', icon: 'playlists' },
+  { label: 'Watch later', icon: 'clock' },
+  { label: 'Liked videos', icon: 'like' },
+  { label: 'Your videos', icon: 'video' },
+  { label: 'Downloads', icon: 'download' },
+]
 
 const feed = computed(() => {
   const contextVideos = rotateVideos(props.feedVideos.slice(0, 8), props.placementStep)
@@ -60,12 +93,36 @@ function rotateVideos(videos: FeedVideo[], step: number) {
     </div>
 
     <div class="flex">
-      <aside class="w-[164px] shrink-0 px-3 py-3">
-        <div class="mb-1 rounded-lg bg-[#272727] px-3 py-2 text-sm font-semibold">⌂ &nbsp; Home</div>
-        <div class="mb-1 rounded-lg px-3 py-2 text-sm text-[#f1f1f1]">Shorts</div>
-        <div class="mb-1 rounded-lg px-3 py-2 text-sm text-[#f1f1f1]">You</div>
-        <div class="mb-1 rounded-lg px-3 py-2 text-sm text-[#f1f1f1]">History</div>
-        <div class="mb-1 rounded-lg px-3 py-2 text-sm text-[#f1f1f1]">Watch later</div>
+      <aside class="w-[188px] shrink-0 px-3 py-3">
+        <div class="space-y-1">
+          <div
+            v-for="item in primarySidebarItems"
+            :key="item.label"
+            class="flex min-h-10 items-center gap-4 rounded-lg px-3 text-sm"
+            :class="item.active ? 'bg-[#272727] font-semibold text-white' : 'text-[#f1f1f1]'"
+          >
+            <SidebarIcon :name="item.icon" />
+            <span class="truncate">{{ item.label }}</span>
+          </div>
+        </div>
+
+        <div class="my-3 border-t border-[#303030]" />
+
+        <div class="mb-2 flex min-h-9 items-center gap-2 px-3 text-sm font-semibold text-[#f1f1f1]">
+          <span>You</span>
+          <SidebarIcon name="chevron" class="size-4" />
+        </div>
+
+        <div class="space-y-1">
+          <div
+            v-for="item in youSidebarItems"
+            :key="item.label"
+            class="flex min-h-10 items-center gap-4 rounded-lg px-3 text-sm text-[#f1f1f1]"
+          >
+            <SidebarIcon :name="item.icon" />
+            <span class="truncate">{{ item.label }}</span>
+          </div>
+        </div>
       </aside>
 
       <div class="min-w-0 flex-1 px-4 py-3">
