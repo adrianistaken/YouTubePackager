@@ -25,19 +25,13 @@ const userVideo = computed<FeedVideo>(() => ({
 }))
 
 const feed = computed(() => {
-  const contextVideos = rotateVideos(props.feedVideos.slice(0, 5), props.placementStep)
-  const insertAt = contextVideos.length ? props.placementStep % (contextVideos.length + 1) : 0
+  const contextVideos = props.feedVideos.slice(0, 5)
+  const positionCount = contextVideos.length + 1
+  const insertAt = ((props.placementStep % positionCount) + positionCount) % positionCount
   const videos = [...contextVideos]
   videos.splice(insertAt, 0, userVideo.value)
   return videos
 })
-
-function rotateVideos(videos: FeedVideo[], step: number) {
-  if (!videos.length) return videos
-
-  const offset = step % videos.length
-  return [...videos.slice(offset), ...videos.slice(0, offset)]
-}
 </script>
 
 <template>
@@ -46,7 +40,14 @@ function rotateVideos(videos: FeedVideo[], step: number) {
       <YouTubeLogo class="text-lg" />
       <div class="flex items-center gap-3">
         <span class="size-5 rounded-full bg-[#272727]" />
-        <span class="size-7 rounded-full bg-[#272727]" />
+        <span class="size-7 overflow-hidden rounded-full bg-[#272727]">
+          <img
+            v-if="packageData.avatar"
+            :src="packageData.avatar"
+            :alt="`${packageData.channelName || 'Channel'} avatar`"
+            class="h-full w-full object-cover"
+          />
+        </span>
       </div>
     </div>
 

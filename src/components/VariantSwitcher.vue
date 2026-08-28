@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { VariantKey, VideoPackage } from '../types'
+import { VARIANT_KEYS, type VariantKey, type VideoPackage } from '../types'
 
 const model = defineModel<VideoPackage>({ required: true })
 
@@ -12,7 +12,7 @@ function setVariant(variant: VariantKey) {
   <div class="flex flex-wrap items-center justify-end gap-3" v-bind="$attrs">
     <div class="flex flex-wrap gap-2">
       <button
-        v-for="variant in ['A', 'B', 'C'] as VariantKey[]"
+        v-for="variant in VARIANT_KEYS"
         :key="variant"
         type="button"
         class="focus-ring inline-flex min-h-9 items-center gap-2 rounded-md border px-3 text-sm font-bold transition"

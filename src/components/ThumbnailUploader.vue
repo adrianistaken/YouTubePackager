@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { VariantKey, VideoPackage } from '../types'
+import { VARIANT_KEYS, type VariantKey, type VideoPackage } from '../types'
 
 const model = defineModel<VideoPackage>({ required: true })
 const warning = ref('')
@@ -87,7 +87,7 @@ function removeActiveThumbnail() {
       </div>
       <div class="flex shrink-0 flex-wrap gap-1">
         <button
-          v-for="variant in ['A', 'B', 'C'] as VariantKey[]"
+          v-for="variant in VARIANT_KEYS"
           :key="variant"
           type="button"
           class="focus-ring inline-flex size-9 items-center justify-center gap-1.5 rounded-md border text-sm font-bold transition"

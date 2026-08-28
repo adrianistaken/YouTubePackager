@@ -1,4 +1,6 @@
-export type VariantKey = 'A' | 'B' | 'C'
+export const VARIANT_KEYS = ['A', 'B', 'C', 'D', 'E'] as const
+
+export type VariantKey = (typeof VARIANT_KEYS)[number]
 
 export type VideoPackage = {
   title: string

@@ -6,7 +6,7 @@ import MobilePreview from './components/MobilePreview.vue'
 import PackageForm from './components/PackageForm.vue'
 import PreviewToggle from './components/PreviewToggle.vue'
 import { useFeedVideos } from './composables/useFeedVideos'
-import type { LayoutMode, VideoPackage } from './types'
+import { VARIANT_KEYS, type LayoutMode, type VideoPackage } from './types'
 import logoUrl from '../youtubepackager-logo.png'
 
 const PACKAGE_STORAGE_KEY = 'youtube-packager:package'
@@ -37,8 +37,8 @@ const previewLabel = computed(() =>
   previewMode.value === 'desktop' ? 'Desktop feed' : 'Mobile feed',
 )
 
-function swapPreviewSpots() {
-  placementStep.value += 1
+function movePreview(direction: -1 | 1) {
+  placementStep.value += direction
 }
 
 watch(
@@ -86,7 +86,7 @@ function persistPackage(value: VideoPackage) {
 }
 
 function isVariantKey(value: unknown): value is VideoPackage['activeVariant'] {
-  return value === 'A' || value === 'B' || value === 'C'
+  return typeof value === 'string' && VARIANT_KEYS.some((variant) => variant === value)
 }
 
 function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] {
@@ -125,9 +125,31 @@ function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] 
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <PreviewToggle v-model="previewMode" />
-              <button type="button" class="tool-button min-h-9 px-3 text-xs sm:text-sm" @click="swapPreviewSpots">
-                Swap spots
-              </button>
+              <div class="flex items-center gap-2" aria-label="Video position in feed">
+                <span class="hidden text-xs font-medium text-graphite xl:inline">Video position</span>
+                <div class="flex items-center">
+                <button
+                  type="button"
+                  class="tool-button min-h-9 rounded-r-none px-3 text-xs sm:text-sm"
+                  aria-label="Move video earlier in the feed"
+                  title="Move video earlier in the feed"
+                  @click="movePreview(-1)"
+                >
+                  <span aria-hidden="true">←</span>
+                  Earlier
+                </button>
+                <button
+                  type="button"
+                  class="tool-button min-h-9 rounded-l-none border-l-0 px-3 text-xs sm:text-sm"
+                  aria-label="Move video later in the feed"
+                  title="Move video later in the feed"
+                  @click="movePreview(1)"
+                >
+                  Later
+                  <span aria-hidden="true">→</span>
+                </button>
+                </div>
+              </div>
               <ExportButton :target="previewRef" :mode="previewMode" />
             </div>
           </div>

@@ -58,19 +58,13 @@ const youSidebarItems: SidebarItem[] = [
 ]
 
 const feed = computed(() => {
-  const contextVideos = rotateVideos(props.feedVideos.slice(0, 8), props.placementStep)
-  const insertAt = contextVideos.length ? props.placementStep % (contextVideos.length + 1) : 0
+  const contextVideos = props.feedVideos.slice(0, 8)
+  const positionCount = contextVideos.length + 1
+  const insertAt = ((props.placementStep % positionCount) + positionCount) % positionCount
   const videos = [...contextVideos]
   videos.splice(insertAt, 0, userVideo.value)
   return videos
 })
-
-function rotateVideos(videos: FeedVideo[], step: number) {
-  if (!videos.length) return videos
-
-  const offset = step % videos.length
-  return [...videos.slice(offset), ...videos.slice(0, offset)]
-}
 </script>
 
 <template>
@@ -89,7 +83,14 @@ function rotateVideos(videos: FeedVideo[], step: number) {
         <div class="grid w-16 place-items-center border-l border-[#303030] bg-[#222] text-xl">⌕</div>
       </div>
       <div class="grid size-10 place-items-center rounded-full bg-[#181818] text-xl">+</div>
-      <div class="size-8 rounded-full bg-[#2764d9]" />
+      <div class="size-8 overflow-hidden rounded-full bg-[#2764d9]">
+        <img
+          v-if="packageData.avatar"
+          :src="packageData.avatar"
+          :alt="`${packageData.channelName || 'Channel'} avatar`"
+          class="h-full w-full object-cover"
+        />
+      </div>
     </div>
 
     <div class="flex">
