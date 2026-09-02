@@ -13,6 +13,7 @@ type PreviewSessionRow = {
   placement_step: number
   avatar_path: string | null
   thumbnail_paths: unknown
+  created_at: string
   updated_at: string
 }
 
@@ -211,13 +212,22 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     thumbnailPaths = parseThumbnailPaths(row.thumbnail_paths)
 
     const metadata = readSyncMetadata()
+    const remoteCreatedAt = Date.parse(row.created_at)
     const remoteUpdatedAt = Date.parse(row.updated_at)
     const localIsNewer =
       metadata.userId === activeUser.id &&
       Number.isFinite(remoteUpdatedAt) &&
       metadata.localChangedAt > remoteUpdatedAt
+    const remoteHasAssets = Boolean(avatarPath || Object.keys(thumbnailPaths).length)
+    const localHasAssets = Boolean(
+      options.packageData.value.avatar || Object.keys(options.packageData.value.thumbnails).length,
+    )
+    const remoteIsPristine =
+      Number.isFinite(remoteCreatedAt) &&
+      Number.isFinite(remoteUpdatedAt) &&
+      Math.abs(remoteUpdatedAt - remoteCreatedAt) < 1000
 
-    if (localIsNewer) {
+    if (localIsNewer || (!remoteHasAssets && localHasAssets && remoteIsPristine)) {
       lastAvatarSource = null
       lastThumbnailSources = {}
       workspaceLoaded = true
@@ -293,7 +303,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
   async function saveWorkspace(userId: string, activeSessionId: string) {
     if (!supabase) return
 
-    const snapshot = structuredClone(options.packageData.value)
+    const snapshot = createPackageSnapshot(options.packageData.value)
     const assetPrefix = `${userId}/${activeSessionId}`
 
     if (snapshot.avatar !== lastAvatarSource) {
@@ -409,6 +419,13 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
 function packageWithoutAssets(packageData: VideoPackage) {
   const { avatar: _avatar, thumbnails: _thumbnails, ...metadata } = packageData
   return metadata
+}
+
+function createPackageSnapshot(packageData: VideoPackage): VideoPackage {
+  return {
+    ...packageData,
+    thumbnails: { ...packageData.thumbnails },
+  }
 }
 
 function parseThumbnailPaths(value: unknown): Partial<Record<VariantKey, string>> {

@@ -13,6 +13,7 @@ import logoUrl from '../youtubepackager-logo.png'
 
 const PACKAGE_STORAGE_KEY = 'youtube-packager:package'
 const WORKSPACE_STORAGE_KEY = 'youtube-packager:workspace'
+const LEGACY_ASSET_RECOVERY_KEY = 'youtube-packager:legacy-assets-recovered'
 
 const defaultPackage: VideoPackage = {
   title: 'I rebuilt my entire editing workflow in one weekend',
@@ -68,11 +69,23 @@ function readStoredWorkspace(): WorkspaceState {
     const storedWorkspace = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
     if (storedWorkspace) {
       const parsed = JSON.parse(storedWorkspace) as Partial<WorkspaceState>
-      return {
-        packageData: normalizePackage(parsed.packageData),
+      const packageData = normalizePackage(parsed.packageData)
+      const recoveredPackageData = recoverLegacyAssets(packageData)
+      const workspace: WorkspaceState = {
+        packageData: recoveredPackageData,
         previewMode: parsed.previewMode === 'mobile' ? 'mobile' : 'desktop',
         placementStep: Number.isInteger(parsed.placementStep) ? parsed.placementStep! : 0,
       }
+
+      if (recoveredPackageData !== packageData) {
+        try {
+          window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace))
+          window.localStorage.setItem(LEGACY_ASSET_RECOVERY_KEY, '1')
+        } catch {
+          // Try the legacy recovery again on the next load if storage is full.
+        }
+      }
+      return workspace
     }
 
     const storedPackage = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
@@ -91,6 +104,28 @@ function readStoredWorkspace(): WorkspaceState {
     packageData: { ...defaultPackage },
     previewMode: 'desktop',
     placementStep: 0,
+  }
+}
+
+function recoverLegacyAssets(packageData: VideoPackage): VideoPackage {
+  if (window.localStorage.getItem(LEGACY_ASSET_RECOVERY_KEY)) return packageData
+
+  const storedLegacyPackage = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
+  if (!storedLegacyPackage) return packageData
+
+  const legacyPackage = normalizePackage(JSON.parse(storedLegacyPackage))
+  const recoveredThumbnails = { ...legacyPackage.thumbnails, ...packageData.thumbnails }
+  const recoveredAvatar = packageData.avatar ?? legacyPackage.avatar
+  const recoveredAnything =
+    recoveredAvatar !== packageData.avatar ||
+    Object.keys(recoveredThumbnails).length > Object.keys(packageData.thumbnails).length
+
+  if (!recoveredAnything) return packageData
+
+  return {
+    ...packageData,
+    avatar: recoveredAvatar,
+    thumbnails: recoveredThumbnails,
   }
 }
 
