@@ -251,8 +251,14 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
       return
     }
 
+    const remoteMetadata = isRecord(row.package_data) ? row.package_data : {}
+    const needsChannelUrlMigration =
+      typeof remoteMetadata.channelUrl !== 'string' && Boolean(options.packageData.value.channelUrl)
     const remotePackage = options.normalizePackage({
-      ...(isRecord(row.package_data) ? row.package_data : {}),
+      ...remoteMetadata,
+      channelUrl: needsChannelUrlMigration
+        ? options.packageData.value.channelUrl
+        : remoteMetadata.channelUrl,
       avatar: remoteAvatar,
       thumbnails: remoteThumbnails,
     })
@@ -267,6 +273,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     await nextTick()
     suppressCloudSave = false
     workspaceLoaded = true
+    if (needsChannelUrlMigration) scheduleSave(0)
   }
 
   function scheduleSave(delay = 800) {

@@ -1,27 +1,18 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   avatar: string | null
+  channelUrl: string
 }>()
 
 const emit = defineEmits<{
   'update:avatar': [value: string | null]
+  'update:channel-url': [value: string]
 }>()
 
-const CHANNEL_URL_STORAGE_KEY = 'youtube-packager:channel-url'
-
-const channelUrl = ref(readStoredChannelUrl())
 const error = ref('')
 const isResolving = ref(false)
-
-watch(channelUrl, (value) => {
-  try {
-    window.localStorage.setItem(CHANNEL_URL_STORAGE_KEY, value)
-  } catch {
-    // Ignore storage failures so avatar lookup still works.
-  }
-})
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -42,7 +33,7 @@ async function handleUpload(event: Event) {
 }
 
 async function resolveAvatar() {
-  const url = channelUrl.value.trim()
+  const url = props.channelUrl.trim()
   if (!url || isResolving.value) return
 
   error.value = ''
@@ -67,13 +58,6 @@ async function resolveAvatar() {
   }
 }
 
-function readStoredChannelUrl() {
-  try {
-    return window.localStorage.getItem(CHANNEL_URL_STORAGE_KEY) ?? ''
-  } catch {
-    return ''
-  }
-}
 </script>
 
 <template>
@@ -106,10 +90,11 @@ function readStoredChannelUrl() {
 
     <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
       <input
-        v-model="channelUrl"
+        :value="channelUrl"
         class="field-input min-h-9 py-2 text-xs"
         type="url"
         placeholder="Paste YouTube channel URL"
+        @input="emit('update:channel-url', ($event.target as HTMLInputElement).value)"
         @keydown.enter.prevent="resolveAvatar"
       />
       <button

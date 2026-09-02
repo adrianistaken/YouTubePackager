@@ -14,10 +14,12 @@ import logoUrl from '../youtubepackager-logo.png'
 const PACKAGE_STORAGE_KEY = 'youtube-packager:package'
 const WORKSPACE_STORAGE_KEY = 'youtube-packager:workspace'
 const LEGACY_ASSET_RECOVERY_KEY = 'youtube-packager:legacy-assets-recovered'
+const CHANNEL_URL_STORAGE_KEY = 'youtube-packager:channel-url'
 
 const defaultPackage: VideoPackage = {
   title: 'I rebuilt my entire editing workflow in one weekend',
   channelName: 'Channel Name',
+  channelUrl: '',
   views: '18K views',
   publishTime: '3 days ago',
   duration: '12:18',
@@ -69,7 +71,7 @@ function readStoredWorkspace(): WorkspaceState {
     const storedWorkspace = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
     if (storedWorkspace) {
       const parsed = JSON.parse(storedWorkspace) as Partial<WorkspaceState>
-      const packageData = normalizePackage(parsed.packageData)
+      const packageData = recoverLegacyChannelUrl(normalizePackage(parsed.packageData))
       const recoveredPackageData = recoverLegacyAssets(packageData)
       const workspace: WorkspaceState = {
         packageData: recoveredPackageData,
@@ -91,7 +93,7 @@ function readStoredWorkspace(): WorkspaceState {
     const storedPackage = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
     if (storedPackage) {
       return {
-        packageData: normalizePackage(JSON.parse(storedPackage)),
+        packageData: recoverLegacyChannelUrl(normalizePackage(JSON.parse(storedPackage))),
         previewMode: 'desktop',
         placementStep: 0,
       }
@@ -105,6 +107,13 @@ function readStoredWorkspace(): WorkspaceState {
     previewMode: 'desktop',
     placementStep: 0,
   }
+}
+
+function recoverLegacyChannelUrl(packageData: VideoPackage): VideoPackage {
+  if (packageData.channelUrl) return packageData
+
+  const legacyChannelUrl = window.localStorage.getItem(CHANNEL_URL_STORAGE_KEY)
+  return legacyChannelUrl ? { ...packageData, channelUrl: legacyChannelUrl } : packageData
 }
 
 function recoverLegacyAssets(packageData: VideoPackage): VideoPackage {

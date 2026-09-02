@@ -5,6 +5,7 @@ export type VariantKey = (typeof VARIANT_KEYS)[number]
 export type VideoPackage = {
   title: string
   channelName: string
+  channelUrl: string
   views: string
   publishTime: string
   duration: string

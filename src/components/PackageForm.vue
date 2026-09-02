@@ -15,7 +15,9 @@ function updateField<K extends keyof VideoPackage>(field: K, value: VideoPackage
     <ThumbnailUploader v-model="model" />
     <AvatarUploader
       :avatar="model.avatar"
+      :channel-url="model.channelUrl"
       @update:avatar="updateField('avatar', $event)"
+      @update:channel-url="updateField('channelUrl', $event)"
     />
 
     <label class="block space-y-2">
