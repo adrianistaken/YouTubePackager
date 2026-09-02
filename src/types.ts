@@ -15,6 +15,12 @@ export type VideoPackage = {
 
 export type LayoutMode = 'desktop' | 'mobile'
 
+export type WorkspaceState = {
+  packageData: VideoPackage
+  previewMode: LayoutMode
+  placementStep: number
+}
+
 export type FeedVideo = {
   id: string
   title: string

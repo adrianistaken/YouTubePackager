@@ -1,20 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import AuthPanel from './components/AuthPanel.vue'
 import DesktopPreview from './components/DesktopPreview.vue'
 import ExportButton from './components/ExportButton.vue'
 import MobilePreview from './components/MobilePreview.vue'
 import PackageForm from './components/PackageForm.vue'
 import PreviewToggle from './components/PreviewToggle.vue'
+import { useCloudWorkspace } from './composables/useCloudWorkspace'
 import { useFeedVideos } from './composables/useFeedVideos'
-import { VARIANT_KEYS, type LayoutMode, type VideoPackage } from './types'
+import { VARIANT_KEYS, type LayoutMode, type VideoPackage, type WorkspaceState } from './types'
 import logoUrl from '../youtubepackager-logo.png'
 
 const PACKAGE_STORAGE_KEY = 'youtube-packager:package'
-
-const previewMode = ref<LayoutMode>('desktop')
-const previewRef = ref<HTMLElement | null>(null)
-const placementStep = ref(0)
-const { videos: feedVideos, status: feedStatus } = useFeedVideos()
+const WORKSPACE_STORAGE_KEY = 'youtube-packager:workspace'
 
 const defaultPackage: VideoPackage = {
   title: 'I rebuilt my entire editing workflow in one weekend',
@@ -27,7 +25,18 @@ const defaultPackage: VideoPackage = {
   thumbnails: {},
 }
 
-const videoPackage = ref<VideoPackage>(readStoredPackage())
+const storedWorkspace = readStoredWorkspace()
+const previewMode = ref<LayoutMode>(storedWorkspace.previewMode)
+const previewRef = ref<HTMLElement | null>(null)
+const placementStep = ref(storedWorkspace.placementStep)
+const videoPackage = ref<VideoPackage>(storedWorkspace.packageData)
+const { videos: feedVideos, status: feedStatus } = useFeedVideos()
+const cloud = useCloudWorkspace({
+  packageData: videoPackage,
+  previewMode,
+  placementStep,
+  normalizePackage,
+})
 
 const activeThumbnail = computed(
   () => videoPackage.value.thumbnails[videoPackage.value.activeVariant] ?? null,
@@ -36,49 +45,82 @@ const activeThumbnail = computed(
 const previewLabel = computed(() =>
   previewMode.value === 'desktop' ? 'Desktop feed' : 'Mobile feed',
 )
+const userEmail = computed(() => cloud.user.value?.email ?? null)
 
 function movePreview(direction: -1 | 1) {
   placementStep.value += direction
 }
 
 watch(
-  videoPackage,
-  (value) => {
-    persistPackage(value)
+  [videoPackage, previewMode, placementStep],
+  () => {
+    persistWorkspace({
+      packageData: videoPackage.value,
+      previewMode: previewMode.value,
+      placementStep: placementStep.value,
+    })
   },
   { deep: true },
 )
 
-function readStoredPackage(): VideoPackage {
+function readStoredWorkspace(): WorkspaceState {
   try {
-    const stored = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
-    if (!stored) return { ...defaultPackage }
+    const storedWorkspace = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+    if (storedWorkspace) {
+      const parsed = JSON.parse(storedWorkspace) as Partial<WorkspaceState>
+      return {
+        packageData: normalizePackage(parsed.packageData),
+        previewMode: parsed.previewMode === 'mobile' ? 'mobile' : 'desktop',
+        placementStep: Number.isInteger(parsed.placementStep) ? parsed.placementStep! : 0,
+      }
+    }
 
-    const parsed = JSON.parse(stored) as Partial<VideoPackage>
-    return {
-      ...defaultPackage,
-      ...parsed,
-      activeVariant: isVariantKey(parsed.activeVariant) ? parsed.activeVariant : defaultPackage.activeVariant,
-      avatar: typeof parsed.avatar === 'string' ? parsed.avatar : null,
-      thumbnails: isThumbnailRecord(parsed.thumbnails) ? parsed.thumbnails : {},
+    const storedPackage = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
+    if (storedPackage) {
+      return {
+        packageData: normalizePackage(JSON.parse(storedPackage)),
+        previewMode: 'desktop',
+        placementStep: 0,
+      }
     }
   } catch {
-    return { ...defaultPackage }
+    // Fall through to a fresh local workspace.
+  }
+
+  return {
+    packageData: { ...defaultPackage },
+    previewMode: 'desktop',
+    placementStep: 0,
   }
 }
 
-function persistPackage(value: VideoPackage) {
+function normalizePackage(value: unknown): VideoPackage {
+  const parsed = value && typeof value === 'object' ? (value as Partial<VideoPackage>) : {}
+
+  return {
+    ...defaultPackage,
+    ...parsed,
+    activeVariant: isVariantKey(parsed.activeVariant) ? parsed.activeVariant : defaultPackage.activeVariant,
+    avatar: typeof parsed.avatar === 'string' ? parsed.avatar : null,
+    thumbnails: isThumbnailRecord(parsed.thumbnails) ? parsed.thumbnails : {},
+  }
+}
+
+function persistWorkspace(value: WorkspaceState) {
   try {
-    window.localStorage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(value))
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(value))
   } catch {
-    const lightweightPackage: VideoPackage = {
+    const lightweightWorkspace: WorkspaceState = {
       ...value,
-      avatar: null,
-      thumbnails: {},
+      packageData: {
+        ...value.packageData,
+        avatar: null,
+        thumbnails: {},
+      },
     }
 
     try {
-      window.localStorage.setItem(PACKAGE_STORAGE_KEY, JSON.stringify(lightweightPackage))
+      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(lightweightWorkspace))
     } catch {
       // Ignore storage failures so the editor remains usable.
     }
@@ -102,15 +144,28 @@ function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] 
   <main class="min-h-screen bg-paper text-ink">
     <section class="grid min-h-screen lg:grid-cols-[360px_minmax(0,1fr)]">
       <aside class="border-b border-line bg-panel lg:h-screen lg:overflow-y-auto lg:border-b-0 lg:border-r">
-        <div class="border-b border-line px-4 py-3">
-          <div class="flex items-center justify-between gap-3">
-            <div class="flex min-w-0 items-center gap-3">
-              <img :src="logoUrl" alt="" class="size-8 shrink-0 rounded-md object-cover" />
-              <div class="min-w-0">
-                <p class="truncate text-sm font-semibold">YouTube Packager</p>
+        <div class="border-b border-line">
+          <div class="px-4 py-3">
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex min-w-0 items-center gap-3">
+                <img :src="logoUrl" alt="" class="size-8 shrink-0 rounded-md object-cover" />
+                <div class="min-w-0">
+                  <p class="truncate text-sm font-semibold">YouTube Packager</p>
+                </div>
               </div>
             </div>
           </div>
+          <AuthPanel
+            :configured="cloud.configured"
+            :auth-ready="cloud.authReady.value"
+            :user-email="userEmail"
+            :sync-status="cloud.syncStatus.value"
+            :notice="cloud.notice.value"
+            :error="cloud.error.value"
+            @login="cloud.requestMagicLink"
+            @logout="cloud.signOut"
+            @retry="cloud.retrySync"
+          />
         </div>
         <div class="p-4">
           <PackageForm v-model="videoPackage" />
@@ -128,26 +183,26 @@ function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] 
               <div class="flex items-center gap-2" aria-label="Video position in feed">
                 <span class="hidden text-xs font-medium text-graphite xl:inline">Video position</span>
                 <div class="flex items-center">
-                <button
-                  type="button"
-                  class="tool-button min-h-9 rounded-r-none px-3 text-xs sm:text-sm"
-                  aria-label="Move video earlier in the feed"
-                  title="Move video earlier in the feed"
-                  @click="movePreview(-1)"
-                >
-                  <span aria-hidden="true">←</span>
-                  Earlier
-                </button>
-                <button
-                  type="button"
-                  class="tool-button min-h-9 rounded-l-none border-l-0 px-3 text-xs sm:text-sm"
-                  aria-label="Move video later in the feed"
-                  title="Move video later in the feed"
-                  @click="movePreview(1)"
-                >
-                  Later
-                  <span aria-hidden="true">→</span>
-                </button>
+                  <button
+                    type="button"
+                    class="tool-button min-h-9 rounded-r-none px-3 text-xs sm:text-sm"
+                    aria-label="Move video earlier in the feed"
+                    title="Move video earlier in the feed"
+                    @click="movePreview(-1)"
+                  >
+                    <span aria-hidden="true">←</span>
+                    Earlier
+                  </button>
+                  <button
+                    type="button"
+                    class="tool-button min-h-9 rounded-l-none border-l-0 px-3 text-xs sm:text-sm"
+                    aria-label="Move video later in the feed"
+                    title="Move video later in the feed"
+                    @click="movePreview(1)"
+                  >
+                    Later
+                    <span aria-hidden="true">→</span>
+                  </button>
                 </div>
               </div>
               <ExportButton :target="previewRef" :mode="previewMode" />
