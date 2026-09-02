@@ -31,7 +31,7 @@ async function submitLogin() {
 
 function statusLabel() {
   if (props.syncStatus === 'loading') return 'Loading workspace…'
-  if (props.syncStatus === 'saving') return 'Saving…'
+  if (props.syncStatus === 'saving') return 'Saved to account'
   if (props.syncStatus === 'saved') return 'Saved to account'
   if (props.syncStatus === 'error') return 'Sync needs attention'
   return 'Saved on this device'
