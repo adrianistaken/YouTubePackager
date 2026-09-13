@@ -1,5 +1,6 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import type { User } from '@supabase/supabase-js'
+import { clearWorkspaceCache, readWorkspaceCache, readSyncMetadata, writeSyncMetadata } from '../lib/workspaceCache'
 import { isCloudConfigured, supabase } from '../lib/supabase'
 import { VARIANT_KEYS, type LayoutMode, type VariantKey, type VideoPackage } from '../types'
 
@@ -17,11 +18,6 @@ type PreviewSessionRow = {
   updated_at: string
 }
 
-type SyncMetadata = {
-  userId: string | null
-  localChangedAt: number
-}
-
 type UseCloudWorkspaceOptions = {
   packageData: Ref<VideoPackage>
   previewMode: Ref<LayoutMode>
@@ -30,10 +26,11 @@ type UseCloudWorkspaceOptions = {
 }
 
 const ASSET_BUCKET = 'preview-assets'
-const SYNC_METADATA_KEY = 'youtube-packager:cloud-sync'
 
 export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
   const user = ref<User | null>(null)
+  const cacheOwner = ref<string | null>(null)
+  const cacheReady = ref(!isCloudConfigured)
   const authReady = ref(!isCloudConfigured)
   const syncStatus = ref<SyncStatus>(isCloudConfigured ? 'loading' : 'local')
   const notice = ref('')
@@ -46,7 +43,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
   let lastThumbnailSources: Partial<Record<VariantKey, string>> = {}
   let suppressCloudSave = false
   let saveQueued = false
-  let saving = false
+  let saveTask: Promise<void> | null = null
   let workspaceLoaded = false
   let saveTimer: ReturnType<typeof setTimeout> | null = null
   let authSubscription: { unsubscribe: () => void } | null = null
@@ -56,7 +53,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
   watch(
     [options.packageData, options.previewMode, options.placementStep],
     () => {
-      if (suppressCloudSave) return
+      if (suppressCloudSave || !cacheReady.value) return
 
       localRevision += 1
       markLocalChange()
@@ -110,17 +107,22 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     return true
   }
 
-  async function signOut() {
+  async function signOut(discardUnsaved = false) {
     if (!supabase) return
 
     if (saveTimer) {
       window.clearTimeout(saveTimer)
       saveTimer = null
     }
-    await flushSaveQueue()
+    if (!discardUnsaved) await flushSaveQueue()
+    if (!discardUnsaved && syncStatus.value === 'error') {
+      error.value = 'Your latest edits could not be saved. Retry sync, or log out without saving.'
+      return
+    }
 
     const { error: signOutError } = await supabase.auth.signOut()
     if (signOutError) error.value = signOutError.message
+    else await activateUser(null)
   }
 
   function retrySync() {
@@ -134,33 +136,63 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
   }
 
   async function activateUser(nextUser: User | null, force = false) {
+    if (!force && nextUser && user.value?.id === nextUser.id && sessionId && workspaceLoaded) return
     const version = ++activationVersion
+    const previousOwner = cacheOwner.value
+    cacheReady.value = false
+    suppressCloudSave = true
+    if (saveTimer) window.clearTimeout(saveTimer)
+    saveTimer = null
+    saveQueued = false
+    workspaceLoaded = false
+    sessionId = null
+    avatarPath = null
+    thumbnailPaths = {}
+    lastAvatarSource = null
+    lastThumbnailSources = {}
 
+    if (previousOwner && previousOwner !== nextUser?.id) clearWorkspaceCache(previousOwner)
     if (!nextUser) {
       user.value = null
-      sessionId = null
-      avatarPath = null
-      thumbnailPaths = {}
-      lastAvatarSource = null
-      lastThumbnailSources = {}
-      workspaceLoaded = false
+      cacheOwner.value = null
+      // Initial guests retain their local draft. A departing account never becomes a guest draft.
+      if (previousOwner) {
+        options.packageData.value = options.normalizePackage(null)
+        options.previewMode.value = 'desktop'
+        options.placementStep.value = 0
+      }
+      await nextTick()
+      if (version !== activationVersion) return
+      suppressCloudSave = false
+      cacheReady.value = true
       syncStatus.value = 'local'
       notice.value = ''
       return
     }
 
-    if (!force && user.value?.id === nextUser.id && sessionId && workspaceLoaded) return
-
+    const cached = readWorkspaceCache(nextUser.id)
+    if (cached || previousOwner !== null) {
+      options.packageData.value = options.normalizePackage(cached?.packageData)
+      options.previewMode.value = cached?.previewMode === 'mobile' ? 'mobile' : 'desktop'
+      options.placementStep.value = Number.isInteger(cached?.placementStep) ? cached!.placementStep! : 0
+    }
+    // A guest draft may be adopted once, but cannot remain for another account to adopt.
+    clearWorkspaceCache(null)
+    cacheOwner.value = nextUser.id
     user.value = nextUser
     syncStatus.value = 'loading'
     notice.value = ''
     error.value = ''
     workspaceLoaded = false
+    await nextTick()
+    if (version !== activationVersion) return
+    suppressCloudSave = false
+    cacheReady.value = true
 
     try {
-      await loadOrCreateWorkspace(nextUser)
+      await loadOrCreateWorkspace(nextUser, version)
       if (version !== activationVersion) return
-      syncStatus.value = 'saved'
+      if (!error.value) syncStatus.value = 'saved'
     } catch (loadError) {
       if (version !== activationVersion) return
       error.value = messageFromError(loadError, 'Could not load your saved workspace.')
@@ -168,7 +200,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     }
   }
 
-  async function loadOrCreateWorkspace(activeUser: User) {
+  async function loadOrCreateWorkspace(activeUser: User, version: number) {
     if (!supabase) return
     const revisionAtStart = localRevision
 
@@ -179,7 +211,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
       .maybeSingle()
 
     if (selectError) throw selectError
-    if (user.value?.id !== activeUser.id) return
+    if (user.value?.id !== activeUser.id || version !== activationVersion) return
 
     if (!data) {
       const { data: created, error: insertError } = await supabase
@@ -194,7 +226,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
         .single()
 
       if (insertError) throw insertError
-      if (user.value?.id !== activeUser.id) return
+      if (user.value?.id !== activeUser.id || version !== activationVersion) return
       sessionId = (created as PreviewSessionRow).id
       avatarPath = null
       thumbnailPaths = {}
@@ -211,23 +243,13 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     avatarPath = typeof row.avatar_path === 'string' ? row.avatar_path : null
     thumbnailPaths = parseThumbnailPaths(row.thumbnail_paths)
 
-    const metadata = readSyncMetadata()
-    const remoteCreatedAt = Date.parse(row.created_at)
+    const metadata = readSyncMetadata(activeUser.id)
     const remoteUpdatedAt = Date.parse(row.updated_at)
     const localIsNewer =
       metadata.userId === activeUser.id &&
       Number.isFinite(remoteUpdatedAt) &&
       metadata.localChangedAt > remoteUpdatedAt
-    const remoteHasAssets = Boolean(avatarPath || Object.keys(thumbnailPaths).length)
-    const localHasAssets = Boolean(
-      options.packageData.value.avatar || Object.keys(options.packageData.value.thumbnails).length,
-    )
-    const remoteIsPristine =
-      Number.isFinite(remoteCreatedAt) &&
-      Number.isFinite(remoteUpdatedAt) &&
-      Math.abs(remoteUpdatedAt - remoteCreatedAt) < 1000
-
-    if (localIsNewer || (!remoteHasAssets && localHasAssets && remoteIsPristine)) {
+    if (localIsNewer) {
       lastAvatarSource = null
       lastThumbnailSources = {}
       workspaceLoaded = true
@@ -240,7 +262,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
       downloadAsset(avatarPath),
       downloadThumbnails(thumbnailPaths),
     ])
-    if (user.value?.id !== activeUser.id) return
+    if (user.value?.id !== activeUser.id || version !== activationVersion) return
 
     if (localRevision !== revisionAtStart) {
       lastAvatarSource = null
@@ -271,6 +293,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     lastThumbnailSources = { ...remoteThumbnails }
     writeSyncMetadata({ userId: activeUser.id, localChangedAt: remoteUpdatedAt || Date.now() })
     await nextTick()
+    if (version !== activationVersion) return
     suppressCloudSave = false
     workspaceLoaded = true
     if (needsChannelUrlMigration) scheduleSave(0)
@@ -285,36 +308,47 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     }, delay)
   }
 
-  async function flushSaveQueue() {
-    if (!supabase || !user.value || !sessionId || !workspaceLoaded || saving) return
-
-    saving = true
-    try {
-      while (saveQueued && user.value && sessionId) {
-        saveQueued = false
-        syncStatus.value = 'saving'
-        await saveWorkspace(user.value.id, sessionId)
-        syncStatus.value = 'saved'
-        error.value = ''
+  function flushSaveQueue(): Promise<void> {
+    if (saveTask) return saveTask
+    if (!supabase || !user.value || !sessionId || !workspaceLoaded) return Promise.resolve()
+    const version = activationVersion
+    saveTask = (async () => {
+      try {
+        while (saveQueued && user.value && sessionId && version === activationVersion) {
+          saveQueued = false
+          syncStatus.value = 'saving'
+          await saveWorkspace(user.value.id, sessionId, version)
+          if (version !== activationVersion) return
+          syncStatus.value = 'saved'
+          error.value = ''
+        }
+      } catch (saveError) {
+        if (version !== activationVersion) return
+        saveQueued = true
+        error.value = messageFromError(saveError, 'Could not save changes. Your local copy is still available.')
+        syncStatus.value = 'error'
       }
-    } catch (saveError) {
-      saveQueued = true
-      error.value = messageFromError(saveError, 'Could not save changes. Your local copy is still available.')
-      syncStatus.value = 'error'
-    } finally {
-      saving = false
-      if (saveQueued && syncStatus.value !== 'error') void flushSaveQueue()
-    }
+    })().finally(() => {
+      saveTask = null
+      if (saveQueued && workspaceLoaded && syncStatus.value !== 'error') void flushSaveQueue()
+    })
+    return saveTask
   }
 
-  async function saveWorkspace(userId: string, activeSessionId: string) {
+  async function saveWorkspace(userId: string, activeSessionId: string, version: number) {
     if (!supabase) return
 
+    const assertActive = () => {
+      if (version !== activationVersion || user.value?.id !== userId) throw new Error('Account changed.')
+    }
+    assertActive()
     const snapshot = createPackageSnapshot(options.packageData.value)
     const assetPrefix = `${userId}/${activeSessionId}`
 
+    let nextAvatarPath = avatarPath
     if (snapshot.avatar !== lastAvatarSource) {
-      avatarPath = await syncAsset(snapshot.avatar, avatarPath, `${assetPrefix}/avatar`)
+      nextAvatarPath = await syncAsset(snapshot.avatar, avatarPath, `${assetPrefix}/avatar`, assertActive)
+      assertActive()
     }
 
     const nextThumbnailPaths: Partial<Record<VariantKey, string>> = { ...thumbnailPaths }
@@ -327,7 +361,9 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
         source,
         thumbnailPaths[variant] ?? null,
         `${assetPrefix}/thumbnail-${variant.toLowerCase()}`,
+        assertActive,
       )
+      assertActive()
       if (nextPath) nextThumbnailPaths[variant] = nextPath
       else delete nextThumbnailPaths[variant]
     }
@@ -338,7 +374,7 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
         package_data: packageWithoutAssets(snapshot),
         preview_mode: options.previewMode.value,
         placement_step: options.placementStep.value,
-        avatar_path: avatarPath,
+        avatar_path: nextAvatarPath,
         thumbnail_paths: nextThumbnailPaths,
       })
       .eq('id', activeSessionId)
@@ -347,7 +383,8 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
       .single()
 
     if (updateError) throw updateError
-
+    assertActive()
+    avatarPath = nextAvatarPath
     thumbnailPaths = nextThumbnailPaths
     lastAvatarSource = snapshot.avatar
     lastThumbnailSources = { ...snapshot.thumbnails }
@@ -357,7 +394,8 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     })
   }
 
-  async function syncAsset(source: string | null, currentPath: string | null, targetPath: string) {
+  async function syncAsset(source: string | null, currentPath: string | null, targetPath: string, assertActive: () => void) {
+    assertActive()
     if (!supabase) return currentPath
 
     if (!source) {
@@ -369,12 +407,14 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
     }
 
     const blob = await sourceToBlob(source)
+    assertActive()
     const { error: uploadError } = await supabase.storage.from(ASSET_BUCKET).upload(targetPath, blob, {
       upsert: true,
       contentType: blob.type || 'image/jpeg',
       cacheControl: '3600',
     })
     if (uploadError) throw uploadError
+    assertActive()
 
     if (currentPath && currentPath !== targetPath) {
       const { error: removeError } = await supabase.storage.from(ASSET_BUCKET).remove([currentPath])
@@ -403,15 +443,16 @@ export function useCloudWorkspace(options: UseCloudWorkspaceOptions) {
   }
 
   function markLocalChange() {
-    const metadata = readSyncMetadata()
     writeSyncMetadata({
-      userId: user.value?.id ?? metadata.userId,
+      userId: cacheOwner.value,
       localChangedAt: Date.now(),
     })
   }
 
   return {
     configured: isCloudConfigured,
+    cacheOwner,
+    cacheReady,
     user,
     authReady,
     syncStatus,
@@ -443,26 +484,6 @@ function parseThumbnailPaths(value: unknown): Partial<Record<VariantKey, string>
       ([key, path]) => VARIANT_KEYS.some((variant) => variant === key) && typeof path === 'string',
     ),
   ) as Partial<Record<VariantKey, string>>
-}
-
-function readSyncMetadata(): SyncMetadata {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(SYNC_METADATA_KEY) ?? '') as Partial<SyncMetadata>
-    return {
-      userId: typeof parsed.userId === 'string' ? parsed.userId : null,
-      localChangedAt: typeof parsed.localChangedAt === 'number' ? parsed.localChangedAt : 0,
-    }
-  } catch {
-    return { userId: null, localChangedAt: 0 }
-  }
-}
-
-function writeSyncMetadata(metadata: SyncMetadata) {
-  try {
-    window.localStorage.setItem(SYNC_METADATA_KEY, JSON.stringify(metadata))
-  } catch {
-    // Cloud sync can continue without conflict metadata.
-  }
 }
 
 function sourceToBlob(source: string) {

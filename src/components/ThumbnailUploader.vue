@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { imageUploadError } from '../lib/imageUpload'
 import { VARIANT_KEYS, type VariantKey, type VideoPackage } from '../types'
 
 const model = defineModel<VideoPackage>({ required: true })
 const warning = ref('')
 const isDragging = ref(false)
 
-const acceptedTypes = ['image/png', 'image/jpeg', 'image/webp']
 
 function readFileAsDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -31,15 +31,14 @@ async function handleUpload(event: Event) {
   const file = input.files?.[0]
   if (!file) return
 
-  await handleFile(file)
+  try { await handleFile(file) }
+  catch { warning.value = 'Unable to read this image. Try another file.' }
   input.value = ''
 }
 
 async function handleFile(file: File) {
-  if (!acceptedTypes.includes(file.type)) {
-    warning.value = 'Use PNG, JPG, JPEG, or WEBP.'
-    return
-  }
+  warning.value = imageUploadError(file) ?? ''
+  if (warning.value) return
 
   const src = await readFileAsDataUrl(file)
   const size = await getImageSize(src)
@@ -64,7 +63,8 @@ async function handleDrop(event: DragEvent) {
   const file = event.dataTransfer?.files?.[0]
   if (!file) return
 
-  await handleFile(file)
+  try { await handleFile(file) }
+  catch { warning.value = 'Unable to read this image. Try another file.' }
 }
 
 function setVariant(variant: VariantKey) {

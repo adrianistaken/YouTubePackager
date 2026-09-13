@@ -52,3 +52,47 @@ Then put your key in `.env.local`.
 
 The live feed uses YouTube Data API `videos.list` with `chart=mostPopular`.
 Feed results are cached server-side for 1 hour and can serve stale results for up to 24 hours if YouTube refreshes fail.
+
+## Public deployment security
+
+For an existing Supabase project, run
+[`supabase/migrations/20260913_public_launch_security.sql`](supabase/migrations/20260913_public_launch_security.sql)
+in its SQL editor **before deploying this update**. New projects can run `supabase/schema.sql`.
+The migration preserves existing workspaces and images. It restricts new uploads to one
+avatar and five thumbnail paths per account, each at most 10 MB (60 MB maximum for the
+six current assets). Old extra objects are not deleted automatically. Session IDs can
+no longer be changed or deleted by the client to evade that limit; administrative
+account deletion/cleanup must use a trusted backend. Metadata is limited to 64 KB.
+
+For live YouTube lookups on Vercel, configure a persistent Upstash Redis database and
+set `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` as **server-only** environment
+variables, alongside `YOUTUBE_API_KEY`. Never prefix these secrets with `VITE_`.
+The counter uses an atomic Redis script shared across server instances, allowing 10
+avatar or 30 feed requests per IP per 60 seconds and 2,000 combined origin requests
+per 24-hour window. Cached CDN responses do not consume that allowance. A request can
+make at most two YouTube Data API calls. Vercel's overwritten `x-vercel-forwarded-for`
+header supplies the client IP; another host needs an equivalent trusted-IP adapter.
+Do not trust arbitrary client-supplied forwarding headers.
+
+Production lookups fail closed if the counters are missing or unavailable. Uploaded
+images, previews, exports, cloud sync, and generated feed context still work; automatic
+avatar lookup displays an availability message. Local development uses in-memory
+counters when Redis is not configured. Supported avatar URLs are HTTPS public channel
+URLs (`/@handle`, `/channel/ID`, `/user/name`, `/c/name`, including common channel tabs).
+Video links and arbitrary redirects are rejected; remote pages and images have size,
+timeout, redirect, and destination limits. The feed uses US popular videos.
+
+Also configure hosting firewall/rate limits and provider spending/quota alerts: the
+application limiter cannot prevent costs from incoming traffic or unlimited new
+account signups. In Supabase, review signup/email rate limits, enable CAPTCHA if
+opening registration broadly, and verify the private bucket and RLS policies on the
+actual deployed project. Restrict the Google key to the YouTube Data API. Deploy the
+built app with the serverless API functions, never an exposed Vite development server.
+
+Account caches are scoped by user. Logout and account switches clear the departing
+account's local cache and visible draft. The next login reloads its cloud workspace.
+Logout waits for saves. If saving fails, it offers retry or an explicit
+"Log out without saving" action; the latter clears the unsynced local draft. A guest draft is adopted once on first account
+creation. Existing legacy caches migrate behind their recorded account owner.
+
+Verification: `npm test`, `npm run build`, and `npm audit`.

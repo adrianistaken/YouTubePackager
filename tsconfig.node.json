@@ -12,5 +12,5 @@
     "noEmit": true,
     "strict": true
   },
-  "include": ["vite.config.ts", "server/**/*.ts", "src/types.ts"]
+  "include": ["vite.config.ts", "server/**/*.ts", "api/**/*.ts", "src/types.ts"]
 }
