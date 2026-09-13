@@ -9,12 +9,8 @@ import PreviewToggle from './components/PreviewToggle.vue'
 import { useCloudWorkspace } from './composables/useCloudWorkspace'
 import { useFeedVideos } from './composables/useFeedVideos'
 import { VARIANT_KEYS, type LayoutMode, type VideoPackage, type WorkspaceState } from './types'
+import { migrateWorkspaceCache, readWorkspaceCache, writeWorkspaceCache } from './lib/workspaceCache'
 import logoUrl from '../youtubepackager-logo.png'
-
-const PACKAGE_STORAGE_KEY = 'youtube-packager:package'
-const WORKSPACE_STORAGE_KEY = 'youtube-packager:workspace'
-const LEGACY_ASSET_RECOVERY_KEY = 'youtube-packager:legacy-assets-recovered'
-const CHANNEL_URL_STORAGE_KEY = 'youtube-packager:channel-url'
 
 const defaultPackage: VideoPackage = {
   title: 'I rebuilt my entire editing workflow in one weekend',
@@ -28,7 +24,13 @@ const defaultPackage: VideoPackage = {
   thumbnails: {},
 }
 
-const storedWorkspace = readStoredWorkspace()
+migrateWorkspaceCache()
+const cachedGuest = readWorkspaceCache(null)
+const storedWorkspace: WorkspaceState = {
+  packageData: normalizePackage(cachedGuest?.packageData),
+  previewMode: cachedGuest?.previewMode === 'mobile' ? 'mobile' : 'desktop',
+  placementStep: Number.isInteger(cachedGuest?.placementStep) ? cachedGuest!.placementStep! : 0,
+}
 const previewMode = ref<LayoutMode>(storedWorkspace.previewMode)
 const previewRef = ref<HTMLElement | null>(null)
 const placementStep = ref(storedWorkspace.placementStep)
@@ -55,9 +57,10 @@ function movePreview(direction: -1 | 1) {
 }
 
 watch(
-  [videoPackage, previewMode, placementStep],
+  [videoPackage, previewMode, placementStep, cloud.cacheReady, cloud.cacheOwner],
   () => {
-    persistWorkspace({
+    if (!cloud.cacheReady.value) return
+    writeWorkspaceCache(cloud.cacheOwner.value, {
       packageData: videoPackage.value,
       previewMode: previewMode.value,
       placementStep: placementStep.value,
@@ -65,78 +68,6 @@ watch(
   },
   { deep: true },
 )
-
-function readStoredWorkspace(): WorkspaceState {
-  try {
-    const storedWorkspace = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
-    if (storedWorkspace) {
-      const parsed = JSON.parse(storedWorkspace) as Partial<WorkspaceState>
-      const packageData = recoverLegacyChannelUrl(normalizePackage(parsed.packageData))
-      const recoveredPackageData = recoverLegacyAssets(packageData)
-      const workspace: WorkspaceState = {
-        packageData: recoveredPackageData,
-        previewMode: parsed.previewMode === 'mobile' ? 'mobile' : 'desktop',
-        placementStep: Number.isInteger(parsed.placementStep) ? parsed.placementStep! : 0,
-      }
-
-      if (recoveredPackageData !== packageData) {
-        try {
-          window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace))
-          window.localStorage.setItem(LEGACY_ASSET_RECOVERY_KEY, '1')
-        } catch {
-          // Try the legacy recovery again on the next load if storage is full.
-        }
-      }
-      return workspace
-    }
-
-    const storedPackage = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
-    if (storedPackage) {
-      return {
-        packageData: recoverLegacyChannelUrl(normalizePackage(JSON.parse(storedPackage))),
-        previewMode: 'desktop',
-        placementStep: 0,
-      }
-    }
-  } catch {
-    // Fall through to a fresh local workspace.
-  }
-
-  return {
-    packageData: { ...defaultPackage },
-    previewMode: 'desktop',
-    placementStep: 0,
-  }
-}
-
-function recoverLegacyChannelUrl(packageData: VideoPackage): VideoPackage {
-  if (packageData.channelUrl) return packageData
-
-  const legacyChannelUrl = window.localStorage.getItem(CHANNEL_URL_STORAGE_KEY)
-  return legacyChannelUrl ? { ...packageData, channelUrl: legacyChannelUrl } : packageData
-}
-
-function recoverLegacyAssets(packageData: VideoPackage): VideoPackage {
-  if (window.localStorage.getItem(LEGACY_ASSET_RECOVERY_KEY)) return packageData
-
-  const storedLegacyPackage = window.localStorage.getItem(PACKAGE_STORAGE_KEY)
-  if (!storedLegacyPackage) return packageData
-
-  const legacyPackage = normalizePackage(JSON.parse(storedLegacyPackage))
-  const recoveredThumbnails = { ...legacyPackage.thumbnails, ...packageData.thumbnails }
-  const recoveredAvatar = packageData.avatar ?? legacyPackage.avatar
-  const recoveredAnything =
-    recoveredAvatar !== packageData.avatar ||
-    Object.keys(recoveredThumbnails).length > Object.keys(packageData.thumbnails).length
-
-  if (!recoveredAnything) return packageData
-
-  return {
-    ...packageData,
-    avatar: recoveredAvatar,
-    thumbnails: recoveredThumbnails,
-  }
-}
 
 function normalizePackage(value: unknown): VideoPackage {
   const parsed = value && typeof value === 'object' ? (value as Partial<VideoPackage>) : {}
@@ -147,27 +78,6 @@ function normalizePackage(value: unknown): VideoPackage {
     activeVariant: isVariantKey(parsed.activeVariant) ? parsed.activeVariant : defaultPackage.activeVariant,
     avatar: typeof parsed.avatar === 'string' ? parsed.avatar : null,
     thumbnails: isThumbnailRecord(parsed.thumbnails) ? parsed.thumbnails : {},
-  }
-}
-
-function persistWorkspace(value: WorkspaceState) {
-  try {
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(value))
-  } catch {
-    const lightweightWorkspace: WorkspaceState = {
-      ...value,
-      packageData: {
-        ...value.packageData,
-        avatar: null,
-        thumbnails: {},
-      },
-    }
-
-    try {
-      window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(lightweightWorkspace))
-    } catch {
-      // Ignore storage failures so the editor remains usable.
-    }
   }
 }
 
@@ -212,7 +122,7 @@ function isThumbnailRecord(value: unknown): value is VideoPackage['thumbnails'] 
           />
         </div>
         <div class="p-4">
-          <PackageForm v-model="videoPackage" />
+          <PackageForm :key="cloud.cacheOwner.value ?? 'guest'" v-model="videoPackage" />
         </div>
       </aside>
 

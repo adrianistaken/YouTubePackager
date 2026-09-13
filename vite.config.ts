@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { resolveYouTubeAvatar } from './server/youtubeAvatar'
-import { resolveCachedPopularFeedVideos } from './server/youtubeFeed'
+import type { ApiRequest } from './server/rateLimit'
+import { handleApi, type ApiResponse } from './server/api'
 
 declare const process: {
   cwd(): string
@@ -10,78 +10,28 @@ declare const process: {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  process.env.YOUTUBE_API_KEY ||= env.YOUTUBE_API_KEY
-
+  for (const key of ['YOUTUBE_API_KEY', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN']) {
+    process.env[key] ||= env[key]
+  }
   return {
-    plugins: [
-      vue(),
-      {
-        name: 'youtube-packager-api',
-        configureServer(server) {
-        server.middlewares.use('/api/youtube-avatar', async (req: any, res: any) => {
-          if (req.method !== 'GET') {
-            res.statusCode = 405
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: 'Use GET.' }))
-            return
-          }
-
-          const requestUrl = new URL(req.url ?? '', 'http://localhost')
-          const channelUrl = requestUrl.searchParams.get('url')
-
-          if (!channelUrl) {
-            res.statusCode = 400
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: 'Paste a YouTube channel URL.' }))
-            return
-          }
-
-          try {
-            const result = await resolveYouTubeAvatar(channelUrl)
-            res.statusCode = 200
-            res.setHeader('Cache-Control', 'public, max-age=86400')
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify(result))
-          } catch (error) {
-            res.statusCode = 400
-            res.setHeader('Content-Type', 'application/json')
-            res.end(
-              JSON.stringify({
-                error: error instanceof Error ? error.message : 'Could not resolve the channel avatar.',
-              }),
-            )
-          }
-        })
-
-        server.middlewares.use('/api/feed-videos', async (req: any, res: any) => {
-          if (req.method !== 'GET') {
-            res.statusCode = 405
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ error: 'Use GET.' }))
-            return
-          }
-
-          const requestUrl = new URL(req.url ?? '', 'http://localhost')
-          const regionCode = requestUrl.searchParams.get('region') ?? 'US'
-
-          try {
-            const videos = await resolveCachedPopularFeedVideos(regionCode)
-            res.statusCode = 200
-            res.setHeader('Cache-Control', 'public, max-age=3600')
-            res.setHeader('Content-Type', 'application/json')
-            res.end(JSON.stringify({ videos }))
-          } catch (error) {
-            res.statusCode = 503
-            res.setHeader('Content-Type', 'application/json')
-            res.end(
-              JSON.stringify({
-                error: error instanceof Error ? error.message : 'Live feed videos are unavailable.',
-              }),
-            )
-          }
-        })
-        },
+    plugins: [vue(), {
+      name: 'youtube-packager-api',
+      configureServer(server) {
+        for (const [path, endpoint] of [['/api/youtube-avatar', 'avatar'], ['/api/feed-videos', 'feed']] as const) {
+          server.middlewares.use(path, async (req, res) => {
+            const incoming = req as typeof req & ApiRequest & { url?: string }
+            const url = new URL(incoming.url ?? '', 'http://localhost')
+            const query: ApiRequest['query'] = {}
+            url.searchParams.forEach((value, key) => { query[key] = value })
+            const response: ApiResponse = {
+              setHeader: (name, value) => { res.setHeader(name, value) },
+              status: (code) => { res.statusCode = code; return response },
+              json: (body) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(body)) },
+            }
+            await handleApi(endpoint, { method: incoming.method, headers: incoming.headers, socket: incoming.socket, query }, response)
+          })
+        }
       },
-    ],
+    }],
   }
 })

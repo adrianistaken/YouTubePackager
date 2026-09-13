@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { imageUploadError } from '../lib/imageUpload'
 
 const props = defineProps<{
   avatar: string | null
@@ -28,7 +29,10 @@ async function handleUpload(event: Event) {
   const file = input.files?.[0]
   if (!file) return
 
-  emit('update:avatar', await readFileAsDataUrl(file))
+  error.value = imageUploadError(file) ?? ''
+  if (error.value) { input.value = ''; return }
+  try { emit('update:avatar', await readFileAsDataUrl(file)) }
+  catch { error.value = 'Unable to read this image. Try another file.' }
   input.value = ''
 }
 

@@ -12,7 +12,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   login: [email: string]
-  logout: []
+  logout: [discardUnsaved: boolean]
   retry: []
 }>()
 
@@ -56,8 +56,8 @@ function statusLabel() {
         </button>
         <p v-else class="text-[11px] text-graphite">{{ statusLabel() }}</p>
       </div>
-      <button type="button" class="tool-button min-h-8 px-2 text-xs" @click="emit('logout')">
-        Log out
+      <button type="button" class="tool-button min-h-8 px-2 text-xs" @click="emit('logout', syncStatus === 'error')">
+        {{ syncStatus === 'error' ? 'Log out without saving' : 'Log out' }}
       </button>
     </div>
 

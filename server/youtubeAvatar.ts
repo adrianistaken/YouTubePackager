@@ -1,11 +1,20 @@
+import { safeFetch, requireHttps, fetchYouTubeJson, PublicError } from './safeFetch'
+
 type AvatarResult = {
   avatarDataUrl: string
   avatarUrl: string
   channelName: string | null
 }
 
+type YouTubeChannelItem = {
+  snippet: {
+    title?: string
+    thumbnails?: Record<string, { url: string }>
+  }
+}
+
 type BufferLike = {
-  from(input: ArrayBuffer): { toString(encoding: 'base64'): string }
+  from(input: Uint8Array): { toString(encoding: 'base64'): string }
 }
 
 const YOUTUBE_HOSTS = new Set([
@@ -17,43 +26,65 @@ const YOUTUBE_HOSTS = new Set([
 
 export async function resolveYouTubeAvatar(channelUrl: string): Promise<AvatarResult> {
   const url = normalizeYouTubeUrl(channelUrl)
-  const pageResponse = await fetch(url.href, {
-    headers: {
-      accept: 'text/html,application/xhtml+xml',
-      'accept-language': 'en-US,en;q=0.9',
-      'user-agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-    },
-  })
+  const apiResult = await resolveWithYouTubeApi(url).catch(() => null)
 
-  if (!pageResponse.ok) {
-    throw new Error(`YouTube returned ${pageResponse.status}`)
+  if (apiResult) {
+    return withImageData(apiResult)
   }
 
-  const html = await pageResponse.text()
+  return withImageData(await resolveWithPageHtml(url))
+}
+
+async function resolveWithYouTubeApi(url: URL) {
+  const apiKey = getYouTubeApiKey()
+  const filter = resolveChannelFilter(url)
+
+  if (!apiKey || !filter) {
+    return null
+  }
+
+  const params = new URLSearchParams({
+    key: apiKey,
+    part: 'snippet',
+    maxResults: '1',
+    fields: 'items(snippet(title,thumbnails))',
+    ...filter,
+  })
+
+  const body = await fetchYouTubeJson<{ items?: YouTubeChannelItem[] }>(`https://www.googleapis.com/youtube/v3/channels?${params}`)
+  const item = body.items?.[0]
+  const avatarUrl = item?.snippet.thumbnails ? bestAvatarThumbnail(item.snippet.thumbnails) : null
+
+  return avatarUrl
+    ? {
+        avatarUrl,
+        channelName: item?.snippet.title ?? null,
+      }
+    : null
+}
+
+async function resolveWithPageHtml(url: URL) {
+  const page = await safeFetch(url.href, validateChannelUrl, 4 * 1024 * 1024, 'text/html')
+  if (page.contentType !== 'text/html') throw new PublicError('No public channel page was found.')
+  const html = new TextDecoder().decode(page.bytes)
   const avatarUrl = extractAvatarUrl(html)
   if (!avatarUrl) {
     throw new Error('No channel avatar was found on that page.')
   }
 
-  const avatarResponse = await fetch(avatarUrl, {
-    headers: {
-      accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-      'user-agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-    },
-  })
-
-  if (!avatarResponse.ok) {
-    throw new Error(`Avatar image returned ${avatarResponse.status}`)
+  return {
+    avatarUrl,
+    channelName: extractMetaContent(html, 'og:title') ?? extractMetaContent(html, 'twitter:title'),
   }
+}
 
-  const contentType = avatarResponse.headers.get('content-type') ?? 'image/jpeg'
-  if (!contentType.startsWith('image/')) {
-    throw new Error('Resolved avatar was not an image.')
+async function withImageData(result: { avatarUrl: string; channelName: string | null }) {
+  const image = await safeFetch(result.avatarUrl, validateImageUrl, 10 * 1024 * 1024, 'image/png,image/jpeg,image/webp')
+  const contentType = image.contentType
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(contentType)) {
+    throw new PublicError('Resolved avatar must be PNG, JPEG, or WebP.')
   }
-
-  const imageBuffer = await avatarResponse.arrayBuffer()
+  const imageBuffer = image.bytes
   const buffer = (globalThis as typeof globalThis & { Buffer?: BufferLike }).Buffer
   if (!buffer) {
     throw new Error('Image encoding is not available in this runtime.')
@@ -61,31 +92,52 @@ export async function resolveYouTubeAvatar(channelUrl: string): Promise<AvatarRe
 
   return {
     avatarDataUrl: `data:${contentType};base64,${buffer.from(imageBuffer).toString('base64')}`,
-    avatarUrl,
-    channelName: extractMetaContent(html, 'og:title') ?? extractMetaContent(html, 'twitter:title'),
+    avatarUrl: result.avatarUrl,
+    channelName: result.channelName,
   }
 }
 
-function normalizeYouTubeUrl(rawUrl: string) {
+function resolveChannelFilter(url: URL): Record<string, string> | null {
+  const [firstSegment, secondSegment] = url.pathname.split('/').filter(Boolean)
+
+  if (firstSegment?.startsWith('@')) {
+    return { forHandle: firstSegment }
+  }
+
+  if (firstSegment === 'channel' && secondSegment) {
+    return { id: secondSegment }
+  }
+
+  if (firstSegment === 'user' && secondSegment) {
+    return { forUsername: secondSegment }
+  }
+
+  return null
+}
+
+export function normalizeYouTubeUrl(rawUrl: string) {
   const trimmed = rawUrl.trim()
-  if (!trimmed) {
-    throw new Error('Paste a YouTube channel URL.')
-  }
-
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
-  const url = new URL(withProtocol)
-  const hostname = url.hostname.toLowerCase()
-
-  if (!YOUTUBE_HOSTS.has(hostname)) {
-    throw new Error('Use a youtube.com channel URL.')
-  }
-
-  if (hostname === 'studio.youtube.com') {
-    throw new Error('Use the public channel URL, not YouTube Studio.')
-  }
-
-  return url
+  if (!trimmed || trimmed.length > 2048) throw new PublicError('Paste a public YouTube channel URL.')
+  let url: URL
+  try { url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`) }
+  catch { throw new PublicError('Paste a valid public YouTube channel URL.') }
+  validateChannelUrl(url)
+  // Tracking parameters and subpages must not create new upstream/cache identities.
+  const segments = url.pathname.split('/').filter(Boolean)
+  const path = segments[0].startsWith('@') ? segments[0] : segments.slice(0, 2).join('/')
+  return new URL(`https://www.youtube.com/${path}`)
 }
+
+export function validateChannelUrl(url: URL) {
+  requireHttps(url, YOUTUBE_HOSTS)
+  if (url.hostname === 'studio.youtube.com') throw new PublicError('Use the public channel URL, not YouTube Studio.')
+  if (!/^\/(?:@[^/]+|channel\/UC[A-Za-z0-9_-]{22}|(?:user|c)\/[^/]+)(?:\/(?:featured|videos|shorts|streams|playlists|community|about))?\/?$/.test(url.pathname)) {
+    throw new PublicError('Use a channel URL such as youtube.com/@name, not a video or redirect link.')
+  }
+}
+
+const IMAGE_HOSTS = new Set(['yt3.ggpht.com', 'yt3.googleusercontent.com', 'yt4.ggpht.com', 'yt4.googleusercontent.com', 'i.ytimg.com'])
+export function validateImageUrl(url: URL) { requireHttps(url, IMAGE_HOSTS) }
 
 function extractAvatarUrl(html: string) {
   const metaUrl =
@@ -125,6 +177,15 @@ function extractLinkImage(html: string) {
   return match?.[1] ? decodeHtml(match[1]) : null
 }
 
+function bestAvatarThumbnail(thumbnails: Record<string, { url: string }>) {
+  return (
+    thumbnails.medium?.url ??
+    thumbnails.default?.url ??
+    thumbnails.high?.url ??
+    null
+  )
+}
+
 function normalizeImageUrl(url: string) {
   return decodeHtml(url)
     .replaceAll('\\u0026', '&')
@@ -142,4 +203,9 @@ function decodeHtml(value: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getYouTubeApiKey() {
+  return (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process
+    ?.env?.YOUTUBE_API_KEY
 }

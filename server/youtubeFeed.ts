@@ -1,3 +1,4 @@
+import { fetchYouTubeJson } from './safeFetch'
 import type { FeedVideo } from '../src/types'
 
 type YouTubeVideoItem = {
@@ -89,12 +90,7 @@ export async function resolvePopularFeedVideos(regionCode = 'US'): Promise<FeedV
       'items(id,snippet(title,channelId,channelTitle,publishedAt,thumbnails),statistics(viewCount),contentDetails(duration))',
   })
 
-  const videoResponse = await fetch(`https://www.googleapis.com/youtube/v3/videos?${videoParams}`)
-  if (!videoResponse.ok) {
-    throw new Error(`YouTube videos API returned ${videoResponse.status}.`)
-  }
-
-  const videoBody = (await videoResponse.json()) as { items?: YouTubeVideoItem[] }
+  const videoBody = await fetchYouTubeJson<{ items?: YouTubeVideoItem[] }>(`https://www.googleapis.com/youtube/v3/videos?${videoParams}`)
   const items = videoBody.items ?? []
   const channelIds = [...new Set(items.map((item) => item.snippet.channelId))].join(',')
   const channelAvatars = channelIds ? await resolveChannelAvatars(apiKey, channelIds) : new Map<string, string>()
@@ -113,8 +109,9 @@ export async function resolvePopularFeedVideos(regionCode = 'US'): Promise<FeedV
 }
 
 function normalizeRegionCode(regionCode: string) {
-  const normalized = regionCode.trim().toUpperCase()
-  return /^[A-Z]{2}$/.test(normalized) ? normalized : 'US'
+  // The app has one context feed; arbitrary region inputs cannot spend more quota.
+  void regionCode
+  return 'US'
 }
 
 async function resolveChannelAvatars(apiKey: string, ids: string) {
@@ -126,12 +123,7 @@ async function resolveChannelAvatars(apiKey: string, ids: string) {
     fields: 'items(id,snippet(thumbnails))',
   })
 
-  const response = await fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`)
-  if (!response.ok) {
-    return new Map<string, string>()
-  }
-
-  const body = (await response.json()) as { items?: YouTubeChannelItem[] }
+  const body = await fetchYouTubeJson<{ items?: YouTubeChannelItem[] }>(`https://www.googleapis.com/youtube/v3/channels?${params}`).catch(() => ({ items: [] }))
   return new Map(
     (body.items ?? [])
       .map((item) => [item.id, bestThumbnail(item.snippet.thumbnails)] as const)
