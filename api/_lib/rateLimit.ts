@@ -37,8 +37,8 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
   // Vercel's Upstash integration provisions KV_REST_API_* names. Support
   // those directly, while retaining the conventional UPSTASH_* names for
   // other deployments.
-  const url = config.UPSTASH_REDIS_REST_URL ?? config.KV_REST_API_URL
-  const token = config.UPSTASH_REDIS_REST_TOKEN ?? config.KV_REST_API_TOKEN
+  const url = cleanEnvValue(config.UPSTASH_REDIS_REST_URL) ?? cleanEnvValue(config.KV_REST_API_URL)
+  const token = cleanEnvValue(config.UPSTASH_REDIS_REST_TOKEN) ?? cleanEnvValue(config.KV_REST_API_TOKEN)
   if (url && token) {
     try {
       const target = new URL(url)
@@ -76,6 +76,11 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
     value.count++
     localCounters.set(key, value)
   })
+}
+
+function cleanEnvValue(value: string | undefined) {
+  const cleaned = value?.trim().replace(/^(['"])(.*)\1$/, '$2')
+  return cleaned || undefined
 }
 
 // The value is only used as an opaque Redis key; avoid relying on a Node-only
