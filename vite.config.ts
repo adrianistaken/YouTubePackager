@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import type { ApiRequest } from './server/rateLimit'
-import { handleApi, type ApiResponse } from './server/api'
+import { handleApi, type ApiResponse } from './api/_lib/api'
 
 declare const process: {
   cwd(): string
