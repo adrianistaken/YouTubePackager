@@ -58,6 +58,7 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
       return
     } catch (error) {
       if (error instanceof PublicError) throw error
+      console.error('YouTube rate-limit counter failed:', error instanceof Error ? error.message : String(error))
       throw new PublicError('Live YouTube lookup is temporarily unavailable. You can still upload images.', 503)
     }
   }
