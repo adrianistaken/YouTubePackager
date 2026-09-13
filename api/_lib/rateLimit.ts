@@ -34,8 +34,11 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
   const keys = [`yp:v1:${endpoint}:${hash}`, 'yp:v1:youtube:daily']
   const limits = [endpoint === 'avatar' ? 10 : 30, 2000]
   const windows = [60, 86400]
-  const url = config.UPSTASH_REDIS_REST_URL
-  const token = config.UPSTASH_REDIS_REST_TOKEN
+  // Vercel's Upstash integration provisions KV_REST_API_* names. Support
+  // those directly, while retaining the conventional UPSTASH_* names for
+  // other deployments.
+  const url = config.UPSTASH_REDIS_REST_URL ?? config.KV_REST_API_URL
+  const token = config.UPSTASH_REDIS_REST_TOKEN ?? config.KV_REST_API_TOKEN
   if (url && token) {
     try {
       const target = new URL(url)
