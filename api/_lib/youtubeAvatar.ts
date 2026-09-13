@@ -1,4 +1,4 @@
-import { safeFetch, requireHttps, fetchYouTubeJson, PublicError } from './safeFetch'
+import { safeFetch, requireHttps, fetchYouTubeJson, PublicError } from './safeFetch.js'
 
 type AvatarResult = {
   avatarDataUrl: string

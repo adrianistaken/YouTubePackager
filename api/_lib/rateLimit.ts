@@ -1,4 +1,4 @@
-import { PublicError } from './safeFetch'
+import { PublicError } from './safeFetch.js'
 
 export type ApiRequest = {
   method?: string

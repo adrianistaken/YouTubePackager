@@ -1,7 +1,7 @@
-import { normalizeYouTubeUrl, resolveYouTubeAvatar } from './youtubeAvatar'
-import { resolveCachedPopularFeedVideos } from './youtubeFeed'
-import { enforceRateLimit, type ApiRequest } from './rateLimit'
-import { PublicError } from './safeFetch'
+import { normalizeYouTubeUrl, resolveYouTubeAvatar } from './youtubeAvatar.js'
+import { resolveCachedPopularFeedVideos } from './youtubeFeed.js'
+import { enforceRateLimit, type ApiRequest } from './rateLimit.js'
+import { PublicError } from './safeFetch.js'
 
 export type ApiResponse = {
   setHeader(name: string, value: string): void

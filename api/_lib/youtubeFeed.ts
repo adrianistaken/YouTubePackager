@@ -1,4 +1,4 @@
-import { fetchYouTubeJson } from './safeFetch'
+import { fetchYouTubeJson } from './safeFetch.js'
 import type { FeedVideo } from '../../src/types'
 
 type YouTubeVideoItem = {
