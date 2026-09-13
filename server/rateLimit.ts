@@ -30,8 +30,7 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
   // Only Vercel's overwritten header is trusted; arbitrary X-Forwarded-For is not.
   const address = config.VERCEL ? req.headers?.['x-vercel-forwarded-for'] : req.socket?.remoteAddress
   const identity = typeof address === 'string' && address.length <= 128 ? address : 'unknown'
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity))
-  const hash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
+  const hash = hashIdentity(identity)
   const keys = [`yp:v1:${endpoint}:${hash}`, 'yp:v1:youtube:daily']
   const limits = [endpoint === 'avatar' ? 10 : 30, 2000]
   const windows = [60, 86400]
@@ -41,11 +40,14 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
     try {
       const target = new URL(url)
       if (target.protocol !== 'https:' || target.username || target.password) throw new Error('Invalid counter endpoint')
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 3000)
       const response = await fetch(target, {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(3000),
+        method: 'POST', redirect: 'error', signal: controller.signal,
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(['EVAL', SCRIPT, keys.length, ...keys, limits[0], windows[0], limits[1], windows[1]]),
       })
+      clearTimeout(timeout)
       if (!response.ok) throw new Error('Counter unavailable')
       const body = await response.json() as { result?: unknown; error?: string }
       if (body.error || typeof body.result !== 'number' || !Number.isFinite(body.result) || body.result < 0) throw new Error('Invalid counter result')
@@ -70,4 +72,15 @@ export async function enforceRateLimit(req: ApiRequest, endpoint: 'avatar' | 'fe
     value.count++
     localCounters.set(key, value)
   })
+}
+
+// The value is only used as an opaque Redis key; avoid relying on a Node-only
+// crypto import so the same module works in Vercel and the Vite dev server.
+function hashIdentity(value: string) {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
 }
